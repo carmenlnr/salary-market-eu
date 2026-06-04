@@ -35,7 +35,9 @@ def recoger_ofertas(app_id, app_key, pais, categoria, n_paginas=8, por_pagina=50
         for oferta in resultados:
             ofertas.append({
                 "title": oferta.get("title"),
+                "description": oferta.get("description"),
                 "category": oferta.get("category", {}).get("label"),
+                "category_tag": oferta.get("category", {}).get("tag"),
                 "salary_min": oferta.get("salary_min"),
                 "salary_max": oferta.get("salary_max"),
                 "salary_is_predicted": oferta.get("salary_is_predicted"),
