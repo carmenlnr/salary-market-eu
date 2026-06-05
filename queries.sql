@@ -95,3 +95,52 @@ FROM salarios
 GROUP BY sector
 ORDER BY salario_medio DESC;
 
+-- 3. Salario medio por pais y sector
+SELECT 
+    pais,
+    sector,
+    COUNT(*) AS num_ofertas,
+    ROUND(AVG(salary_min), 0) AS salario_medio
+FROM salarios
+GROUP BY pais, sector
+ORDER BY pais, salario_medio DESC;
+
+-- 4. Porcentaje de ofertas que publican salario, por pais
+SELECT 
+    pais,
+    COUNT(*) AS total_ofertas,
+    COUNT(salary_min) AS con_salario,
+    ROUND(COUNT(salary_min) / COUNT(*) * 100, 2) AS porcentaje_con_salario
+FROM ofertas
+GROUP BY pais
+ORDER BY porcentaje_con_salario DESC;
+
+-- 5. Volumen de ofertas (demanda) por pais y sector
+SELECT 
+    pais,
+    sector,
+    COUNT(*) AS num_ofertas
+FROM ofertas
+GROUP BY pais, sector
+ORDER BY num_ofertas DESC;
+
+-- NOTA: casi todas las combinaciones tienen 400 ofertas porque en la recogida limitamos a 8 paginas (400 ofertas) por pais y sector. 
+-- Por eso este dato NO mide la demanda real del mercado, solo refleja el tope de recogida.
+-- El unico dato util es que España tiene menos oferta en Retail (88) y Finance (368). 
+-- Medir la demanda real sin limite de paginas queda como proximo paso.
+
+-- Vemos la estructura del historico (un pais y sector concreto, en orden)
+SELECT pais, sector, mes, salario_medio
+FROM historico
+WHERE pais = 'es' AND sector = 'IT'
+ORDER BY mes;
+
+-- -- 6. Evolucion mensual del salario en España IT, con variacion respecto al mes anterior
+SELECT 
+    mes,
+    salario_medio,
+    LAG(salario_medio) OVER (ORDER BY mes) AS mes_anterior,
+    salario_medio - LAG(salario_medio) OVER (ORDER BY mes) AS variacion
+FROM historico
+WHERE pais = 'es' AND sector = 'IT'
+ORDER BY mes;
