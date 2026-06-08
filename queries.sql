@@ -135,7 +135,7 @@ FROM historico
 WHERE pais = 'es' AND sector = 'IT'
 ORDER BY mes;
 
--- -- 6. Evolucion mensual del salario en España IT, con variacion respecto al mes anterior
+-- 6. Evolucion mensual del salario en España IT, con variacion respecto al mes anterior
 SELECT 
     mes,
     salario_medio,
@@ -144,3 +144,132 @@ SELECT
 FROM historico
 WHERE pais = 'es' AND sector = 'IT'
 ORDER BY mes;
+
+-- Usamos la window function LAG para traer el salario del mes anterior en cada fila y calcular la variacion. Ejemplo con España IT.
+-- NOTA: se detecta una caida anomala en 2026-03 (de 83.000 a 45.000), probablemente por un cambio en como la fuente (Adzuna)
+-- calcula la media ese mes. Se señala como limitacion.
+
+-- 6a. Evolucion mensual de todas las combinaciones pais+sector (para el dashboard)
+SELECT 
+    pais,
+    sector,
+    mes,
+    salario_medio,
+    LAG(salario_medio) OVER (PARTITION BY pais, sector ORDER BY mes) AS mes_anterior,
+    salario_medio - LAG(salario_medio) OVER (PARTITION BY pais, sector ORDER BY mes) AS variacion
+FROM historico
+ORDER BY pais, sector, mes;
+
+-- Evolucion mensual de TODAS las combinaciones pais+sector (LAG con PARTITION BY) Se usa PARTITION BY pais, 
+-- sector para que LAG calcule la variacion por separado en cada serie, sin mezclar paises ni sectores. 
+-- Esta es la version para el dashboard.
+-- NOTA: el historico de Adzuna es inestable y tiene anomalias puntuales (caidas bruscas en marzo 2026 en algunos sectores, 
+-- picos poco realistas como USA Logistics llegando a 186k).
+-- Son medias de ofertas, no salarios oficiales estables. Para tendencias usaremos las series mas estables (ejemplo: UK IT) y 
+-- se menciona esta inestabilidad como limitacion.
+
+-- 7. Mediana de salario
+-- Numeramos los salarios de cada pais ordenados de menor a mayor
+SELECT 
+    pais,
+    salary_min,
+    ROW_NUMBER() OVER (PARTITION BY pais ORDER BY salary_min) AS posicion,
+    COUNT(*) OVER (PARTITION BY pais) AS total
+FROM salarios
+WHERE pais = 'es'
+ORDER BY salary_min;
+
+-- Comentario: paso intermedio para entender la mediana: numeramos los salarios de España, ordenados de menor a mayor (ROW_NUMBER) y 
+-- contamos el total de ofertas (COUNT OVER). Asi cada salario tiene una posicion en la lista ordenada. La mediana es el valor que 
+-- ocupa la posicion central: con 215 ofertas, la posicion central es la 108, que corresponde a un salario de 35.000 €.
+-- Si se compara la media de España es 40.034 € pero la mediana es 35.000 €.
+-- La media es mas alta porque los salarios muy altos (90k, 120k, 150k) la inflan.
+-- La mediana representa mejor el salario "tipico", por eso conviene mirar las dos
+
+-- 7b. Mediana del salario por pais
+-- Primero numeramos los salarios ordenados (subconsulta), luego nos quedamos con el del medio
+SELECT 
+    pais,
+    salary_min AS mediana
+FROM (
+    SELECT 
+        pais,
+        salary_min,
+        ROW_NUMBER() OVER (PARTITION BY pais ORDER BY salary_min) AS posicion,
+        COUNT(*) OVER (PARTITION BY pais) AS total
+    FROM salarios
+) AS subconsulta
+WHERE posicion = ROUND(total / 2)
+ORDER BY mediana DESC;
+
+
+-- 8. Ranking de sectores por salario medio dentro de cada pais
+SELECT 
+    pais,
+    sector,
+    ROUND(AVG(salary_min), 0) AS salario_medio,
+    RANK() OVER (PARTITION BY pais ORDER BY AVG(salary_min) DESC) AS ranking
+FROM salarios
+GROUP BY pais, sector
+ORDER BY pais, ranking;
+
+-- RANK asigna el puesto (1=mejor pagado) a cada sector dentro de su pais.
+-- Insight: el sector mejor pagado varia segun el pais. En UK, USA y Francia lidera IT; en España, Alemania y Paises Bajos lidera Finance.
+-- NOTA: Alemania solo muestra 3 sectores porque IT tiene muy pocas ofertas con salario (muestra pequeña).
+
+-- 9. Salario medio y mediano por nivel (senior, junior, no especificado)
+SELECT 
+    nivel,
+    COUNT(*) AS num_ofertas,
+    ROUND(AVG(salary_min), 0) AS salario_medio
+FROM salarios
+GROUP BY nivel
+ORDER BY salario_medio DESC;
+
+-- 10. Sectores que pagan por encima de la media de su pais (usando CTE, JOIN y HAVING)
+WITH medias_pais AS (
+    SELECT 
+        pais,
+        ROUND(AVG(salary_min), 0) AS media_pais
+    FROM salarios
+    GROUP BY pais
+)
+SELECT 
+    s.pais,
+    s.sector,
+    ROUND(AVG(s.salary_min), 0) AS salario_sector,
+    m.media_pais
+FROM salarios s
+JOIN medias_pais m ON s.pais = m.pais
+GROUP BY s.pais, s.sector, m.media_pais
+HAVING salario_sector > m.media_pais
+ORDER BY s.pais, salario_sector DESC;
+
+-- La CTE 'medias_pais' calcula la media general de cada pais (sin desglosar por sector).
+-- Luego unimos (JOIN) cada sector con la media de su pais y con HAVING nos quedamos solo con los que la superan.
+-- Insight: IT y Finance son los sectores que casi siempre superan la media del pais.alter
+
+
+-- 11. Mediana del salario por pais y sector (CTE + ROW_NUMBER)
+WITH numerados AS (
+    SELECT 
+        pais,
+        sector,
+        salary_min,
+        ROW_NUMBER() OVER (PARTITION BY pais, sector ORDER BY salary_min) AS posicion,
+        COUNT(*) OVER (PARTITION BY pais, sector) AS total
+    FROM salarios
+)
+SELECT 
+    pais,
+    sector,
+    salary_min AS mediana,
+    total AS num_ofertas
+FROM numerados
+WHERE posicion = ROUND(total / 2)
+ORDER BY pais, mediana DESC;
+
+-- Misma logica que la mediana por pais (query 7) pero desglosada tambien por sector.
+-- Comparando con las medias (query 3) se ve donde hay salarios altos que inflan la media: ejemplo USA Finance tiene media 92.770 pero
+-- mediana 86.102 (hay sueldos altos que tiran de la media).
+-- Las combinaciones con pocas ofertas (ej. Alemania Retail = 4) dan medianas poco fiables.
