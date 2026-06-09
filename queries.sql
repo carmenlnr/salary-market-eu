@@ -273,3 +273,97 @@ ORDER BY pais, mediana DESC;
 -- Comparando con las medias (query 3) se ve donde hay salarios altos que inflan la media: ejemplo USA Finance tiene media 92.770 pero
 -- mediana 86.102 (hay sueldos altos que tiran de la media).
 -- Las combinaciones con pocas ofertas (ej. Alemania Retail = 4) dan medianas poco fiables.
+
+
+-- ------------------------------
+-- VIEWS PARA TABLEAU
+-- ------------------------------
+
+-- VIEW: salario medio por sector
+CREATE VIEW vista_salario_sector AS
+SELECT 
+    sector,
+    COUNT(*) AS num_ofertas,
+    ROUND(AVG(salary_min), 0) AS salario_medio
+FROM salarios
+GROUP BY sector;
+
+SELECT * FROM vista_salario_sector;
+
+-- VIEW: salario medio por pais
+CREATE VIEW vista_media_pais AS
+SELECT 
+    pais,
+    COUNT(*) AS num_ofertas,
+    ROUND(AVG(salary_min), 0) AS salario_medio
+FROM salarios
+GROUP BY pais;
+
+SELECT * FROM vista_media_pais;
+
+
+-- VIEW: mediana del salario por pais
+CREATE VIEW vista_mediana_pais AS
+SELECT 
+    pais,
+    salary_min AS salario_mediana
+FROM (
+    SELECT 
+        pais,
+        salary_min,
+        ROW_NUMBER() OVER (PARTITION BY pais ORDER BY salary_min) AS posicion,
+        COUNT(*) OVER (PARTITION BY pais) AS total
+    FROM salarios
+) AS subconsulta
+WHERE posicion = ROUND(total / 2);
+
+SELECT * FROM vista_mediana_pais;
+
+-- VIEW: salario medio por pais y sector
+CREATE VIEW vista_pais_sector AS
+SELECT 
+    pais,
+    sector,
+    COUNT(*) AS num_ofertas,
+    ROUND(AVG(salary_min), 0) AS salario_medio
+FROM salarios
+GROUP BY pais, sector;
+
+SELECT * FROM vista_pais_sector;
+
+-- VIEW: porcentaje de ofertas que publican salario por pais
+CREATE VIEW vista_transparencia AS
+SELECT 
+    pais,
+    COUNT(*) AS total_ofertas,
+    COUNT(salary_min) AS con_salario,
+    ROUND(COUNT(salary_min) / COUNT(*) * 100, 1) AS porcentaje_con_salario
+FROM ofertas
+GROUP BY pais;
+
+ SELECT * FROM vista_transparencia;
+ 
+ -- VIEW: evolucion mensual del salario por pais y sector
+CREATE VIEW vista_evolucion AS
+SELECT 
+    pais,
+    sector,
+    mes,
+    salario_medio,
+    LAG(salario_medio) OVER (PARTITION BY pais, sector ORDER BY mes) AS mes_anterior,
+    salario_medio - LAG(salario_medio) OVER (PARTITION BY pais, sector ORDER BY mes) AS variacion
+FROM historico;
+
+SELECT * FROM vista_evolucion; 
+
+-- VIEW: ranking de sectores por salario dentro de cada pais
+CREATE VIEW vista_ranking_sectores AS
+SELECT 
+    pais,
+    sector,
+    ROUND(AVG(salary_min), 0) AS salario_medio,
+    RANK() OVER (PARTITION BY pais ORDER BY AVG(salary_min) DESC) AS ranking
+FROM salarios
+GROUP BY pais, sector;
+
+SELECT * FROM vista_ranking_sectores;
