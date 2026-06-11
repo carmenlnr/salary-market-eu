@@ -367,3 +367,25 @@ FROM salarios
 GROUP BY pais, sector;
 
 SELECT * FROM vista_ranking_sectores;
+
+-- VIEW: media y mediana por pais (juntas, para el grafico comparativo)
+CREATE VIEW vista_media_mediana_pais AS
+WITH numerados AS (
+    SELECT 
+        pais,
+        salary_min,
+        ROW_NUMBER() OVER (PARTITION BY pais ORDER BY salary_min) AS posicion,
+        COUNT(*) OVER (PARTITION BY pais) AS total
+    FROM salarios
+)
+SELECT 
+    s.pais,
+    ROUND(AVG(s.salary_min), 0) AS media,
+    MAX(CASE WHEN n.posicion = ROUND(n.total / 2) THEN n.salary_min END) AS mediana
+FROM salarios s
+JOIN numerados n ON s.pais = n.pais
+GROUP BY s.pais;
+
+SELECT * FROM vista_media_mediana_pais;
+
+
